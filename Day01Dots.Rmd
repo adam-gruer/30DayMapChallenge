@@ -1,0 +1,76 @@
+---
+title: "Points"
+author: "Adam Gruer"
+date: "2019-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.width = 8,
+                      fig.height = 6)
+
+```
+
+```{r load_libraries}
+library(tidyverse)
+library(sf)
+if (!require(victor)) {
+  remotes::install_github("adam-gruer/victor")
+  library(victor)
+}
+```
+
+```{r data_viz}
+melb_cbd_coords <- list(lon = 144.962814, lat = -37.813486)
+
+melb_cbd <- victor::spoils(melb_cbd_coords$lon,
+  melb_cbd_coords$lat,
+  zoom = 18,
+  nrow = 5,
+  ncol = 10
+)
+
+ggplot() +
+  geom_sf(
+    data = filter(
+      melb_cbd$road,
+      class %in% c(
+        "service",
+        "street",
+        "tertiary",
+        "path"
+      )
+    ),
+    colour = "grey70"
+  ) +
+  geom_sf_text(
+    data = filter(
+      melb_cbd$road,
+      class == "tertiary",
+      name %in% c(
+        "Queen St", "Elizabeth St",
+        "Bourke St", "Russell St",
+        "Lonsdale St", "Flinders St",
+        "Swanston St", "Collins St",
+        "Exhibition St"
+      )
+    ) %>%
+      group_by(name) %>%
+      summarise(),
+    aes(label = name), alpha = 0.7
+  ) +
+  geom_sf(data = filter(
+    melb_cbd$poi_label,
+    type %in% c("Drinking Water", "Toilets")
+  ), aes(colour = type), alpha = 0.4, size = 3) +
+    labs(title = "Locations of Drinking Water and Toilets in Melbourne CBD",
+       caption = "© Mapbox© OpenStreetMap") +
+  theme_void() 
+
+ggsave("melb_toilets_drining.png", width = 8, height = 6)
+
+```
+
+
+
