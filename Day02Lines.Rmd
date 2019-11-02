@@ -1,0 +1,114 @@
+---
+title: "Lines"
+author: "Adam Gruer"
+date: "2019-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.width = 8,
+  fig.height = 6
+)
+```
+
+```{r load_libraries}
+library(conflicted)
+library(tidyverse)
+conflict_prefer("filter", "dplyr")
+library(sf)
+library(here)
+library(magrittr)
+library(patchwork)
+if (!require(victor)) {
+  remotes::install_github("adam-gruer/victor")
+  library(victor)
+}
+```
+
+```{r data}
+if (here("worldcities.csv") %>%
+  file.exists() %>%
+  not()
+) {
+  download.file(
+    "https://simplemaps.com/static/data/world-cities/basic/simplemaps_worldcities_basicv1.5.zip",
+    here("worldcities.zip")
+  )
+
+  unzip("worldcities.zip")
+}
+
+world_cities <- read_csv("worldcities.csv")
+
+selected_cities <- world_cities %>%
+  filter(
+    (city == "Melbourne" & iso3 == "AUS") |
+      (city == "London" & iso3 == "GBR") |
+      (city == "Tokyo" & iso3 == "JPN")
+  ) %>%
+  select(city, lon = lng, lat) %>%
+  transpose()
+
+names(selected_cities) <- map_chr(selected_cities, "city")
+
+
+cities_data <- map(
+  selected_cities,
+  ~ victor::spoils(.x$lon,
+    .x$lat,
+    zoom = 15,
+    nrow = 13,
+    ncol = 13
+  )
+)
+
+saveRDS(cities_data, here("cities_data.RDS"))
+# cities_data <- cities_data[c("Melbourne", "London", "Tokyo")]
+
+roads <- map(cities_data, "road")
+
+
+# bind_rows doesn't work on sf objects
+# so a little workaround
+# geoms <- map(roads, st_geometry) %>% reduce(c)
+# fields <- map(roads, st_drop_geometry) %>% bind_rows( .id = "city")
+# roads <- st_sf(fields, geoms)
+```
+
+```{r data-viz}
+maps <- imap(roads, ~
+
+ggplot() +
+  geom_sf(
+    data = filter(
+      .x,
+      class %in% c(
+        "major_rail",
+        "minor_rail"
+      )
+    ),
+    aes(colour = type), show.legend = "line"
+  ) +
+  annotate("text", -Inf, Inf, label = toupper(.y), hjust = 0, vjust = 1, colour = "white", alpha = 0.6, size = 8) +
+
+  guides(color = guide_legend(title = NULL, ncol = 3)) +
+  ggthemes::scale_color_tableau() +
+theme_void() +
+  theme(
+    panel.background = element_rect(fill = "black"),
+    plot.margin = margin(0, 2, 0, 2),
+    legend.position = c(0.1, 0),
+    legend.background = element_rect(fill = NA), legend.direction = "horizontal",
+    legend.justification = c(0.1, 0.1),
+    legend.text = element_text(colour = "white")
+  ))
+
+wrap_plots(maps)
+
+ggsave("rail.png", width = 10, height = 6)
+```
+
+
+
