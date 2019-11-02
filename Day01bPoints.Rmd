@@ -1,0 +1,122 @@
+---
+title: "Lines"
+author: "Adam Gruer"
+date: "2019-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.width = 8,
+  fig.height = 6
+)
+```
+
+```{r load_libraries}
+library(conflicted)
+library(tidyverse)
+conflict_prefer("filter", "dplyr")
+library(sf)
+library(here)
+library(magrittr)
+library(patchwork)
+library(magick)
+if (!require(victor)) {
+  remotes::install_github("adam-gruer/victor")
+  library(victor)
+}
+```
+
+```{r data}
+if (here("worldcities.csv") %>%
+  file.exists() %>%
+  not()
+) {
+  download.file(
+    "https://simplemaps.com/static/data/world-cities/basic/simplemaps_worldcities_basicv1.5.zip",
+    here("worldcities.zip")
+  )
+
+  unzip("worldcities.zip")
+}
+
+world_cities <- read_csv("worldcities.csv")
+
+selected_cities <- world_cities %>%
+  filter(
+    (city == "Melbourne" & iso3 == "AUS") |
+      (city == "London" & iso3 == "GBR") |
+      (city == "Tokyo" & iso3 == "JPN")
+  ) %>%
+  select(city, lon = lng, lat) %>%
+  transpose()
+
+names(selected_cities) <- map_chr(selected_cities, "city")
+
+
+cities_data <- map(
+  selected_cities,
+  ~ victor::spoils(.x$lon,
+    .x$lat,
+    zoom = 15,
+    nrow = 13,
+    ncol = 13
+  )
+)
+
+saveRDS(cities_data, here("cities_data.RDS"))
+# cities_data <- cities_data[c("Melbourne", "London", "Tokyo")]
+
+transit_stops <- map(cities_data, "transit_stop_label")
+transit_stops$Melbourne %>% 
+  st_drop_geometry() %>% View()
+
+
+```
+
+```{r data-viz}
+maps <- imap(transit_stops, ~
+
+ggplot() +
+  geom_sf(
+    data = .x ,
+    aes(colour = mode),
+    size = 0.5,
+    alpha = 0.6,
+    show.legend = "point"
+  ) +
+  annotate("text", -Inf, Inf, label = toupper(.y), hjust = 0, vjust = 1, colour = "white", alpha = 0.6, size = 8) +
+
+  guides(color = guide_legend(title = NULL, ncol = 3,
+                              override.aes = list(size = 3,
+                                                  alpha = 1))) +
+  ggthemes::scale_color_tableau() +
+theme_void() +
+  theme(
+    panel.background = element_rect(fill = "black"),
+    plot.margin = margin(0, 2, 0, 2),
+    legend.position = c(0.1, 0.02),
+    legend.background = element_rect(fill = NA), 
+    legend.direction = "horizontal",
+    legend.justification = c(0.1, 0),
+    legend.text = element_text(colour = "white")
+  ))
+
+wrap_plots(maps)
+
+ggsave(here("day01_b_transit_stops.png"), width = 10, height = 6)
+transit_stop <- image_read(here("day01_b_transit_stops.png")) 
+image_crop(transit_stop, "3000x1000+0+400") %>% 
+  image_fill( "grey5", point = "+1+1", fuzz = 0) %>% 
+  image_annotate(text = "© Mapbox © OpenStreetMap",
+                 gravity = "southeast",
+                 color = "green",
+                 size = 30,
+                 location = "+30+20") %>% 
+  image_write(here("day01_b_transit_stops.png"))
+
+```
+
+
+
