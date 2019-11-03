@@ -1,0 +1,137 @@
+---
+title: "Polygons"
+author: "Adam Gruer"
+date: "2019-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.width = 8,
+  fig.height = 6
+)
+```
+
+```{r load_libraries}
+library(conflicted)
+library(tidyverse)
+conflict_prefer("filter", "dplyr")
+library(sf)
+library(here)
+library(magrittr)
+library(patchwork)
+library(magick)
+if (!require(victor)) {
+  remotes::install_github("adam-gruer/victor")
+  library(victor)
+}
+```
+
+```{r data}
+
+ selected_cities <-  tribble(
+    ~city, ~lon, ~lat,
+    "Tokyo", 139.775278,35.678290,
+    "Melbourne", 144.975, -37.82,
+    "London", -0.101599,51.505563
+  ) %>% 
+  transpose()
+
+names(selected_cities) <- map_chr(selected_cities, "city")
+
+cities_data <- map(
+  selected_cities,
+  ~ victor::spoils(.x$lon,
+    .x$lat,
+    zoom = 15,
+    nrow = 5,
+    ncol = 5
+  )
+)
+
+#saveRDS(cities_data, here("cities_data_15_5_5.RDS"))
+#saveRDS(cities_data, here("cities_data_18_5_5.RDS"))
+#saveRDS(cities_data, here("cities_data_18_15_15.RDS"))
+#saveRDS(cities_data, here("cities_data_16_15_15.RDS"))
+#cities_data <- readRDS(here("cities_data_15_5_5.RDS"))
+                       
+buildings <- map(cities_data, "building")
+
+```
+
+```{r data-viz}
+maps <- imap(buildings,
+  ~ ggplot() +
+  geom_sf(data = .x %>% 
+              mutate(type_l = fct_collapse(type, 
+                               residential = c("residential",
+                                               "house",
+                                               "apartments",
+                                               "houses"),
+                               building = c("building",
+                                            "building:part"),
+                               commercial = c("commercial",
+                                              "office")),
+         type_l = fct_lump(type_l, 7)),
+          aes(fill = type_l),
+          colour = NA,
+          show.legend = TRUE) +
+  annotate("text", -Inf, Inf,
+           label = toupper(.y),
+           hjust = 0, vjust = 1,
+           colour = "white", alpha = 0.6, size = 12) +
+  guides(fill = guide_legend(title = NULL, ncol = 3,
+                              override.aes = list(size = 3,
+                                                  alpha = 1))) +
+  ggthemes::scale_fill_tableau() +
+theme_void() +
+  theme(
+    panel.background = element_rect(fill = "#3B454A"),
+    plot.margin = margin(0, 2, 0, 2),
+    legend.position = "bottom" ,#c(0.01, 0.02),
+    legend.background = element_rect(fill = "#3B454A"),
+    legend.margin = margin(0,48,0,0),
+    legend.direction = "horizontal",
+    legend.justification = c(0, 0),
+    legend.text = element_text(colour = "white")
+  ))
+
+wrap_plots(maps)
+
+ggsave(here("03_polygons_buildings.png"), width = 10, height = 6)
+```
+
+```{r image editing}
+main_image <- image_read(here("03_polygons_buildings.png"))
+
+plots <- image_crop(main_image, "3000x1000+0+280") 
+
+legends <- image_crop(main_image,geometry = "3000x245+0+0" , gravity = "southwest")
+
+image_append(c(plots, legends), stack = TRUE) %>% 
+  image_fill( "black", point = "+1+1", fuzz = 0) %>% 
+  image_annotate(text = "© Mapbox © OpenStreetMap",
+                 gravity = "southeast",
+                 color = "green",
+                 size = 30,
+                 location = "+30+20") %>% 
+  image_write(here("03_polygons_buildings.png"))
+
+```
+
+
+```{r experiments, eval=FALSE}
+buildings <- cities_data$London$building #%>% 
+  #filter(height > 0)# %>% 
+  #mutate(height_fct = cut(height, breaks = 5))
+                            #c(0,3,10,30,60, 640))) 
+
+ggplot() +
+  geom_sf(data = filter(buildings, height <= 3), alpha = 0.4) +
+  geom_sf(data = filter(buildings, height > 3) %>% 
+            mutate(height_fct = cut(height, breaks = unique(quantile(.data$height))))
+            , aes(fill = height_fct)) 
+```
+
+
