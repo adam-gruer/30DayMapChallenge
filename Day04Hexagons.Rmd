@@ -1,0 +1,150 @@
+---
+title: "Day 04 - Hexagons"
+author: "Adam Gruer"
+date: "03/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(conflicted)
+library(tidyverse)
+conflict_prefer("filter", "dplyr")
+library(h3jsr)
+library(sf)
+library(magick)
+library(here)
+```
+
+```{r }
+download.file("https://data.melbourne.vic.gov.au/api/views/fp38-wiyy/rows.csv?accessType=DOWNLOAD&api_foundry=true", here("city_melb_trees.csv"))
+
+city_melb_trees <- read_csv(here("city_melb_trees.csv"),
+  col_types = cols(
+    `CoM ID` = col_double(),
+    `Common Name` = col_factor(),
+    `Scientific Name` = col_factor(),
+    Genus = col_factor(),
+    Family = col_factor(),
+    `Diameter Breast Height` = col_double(),
+    `Year Planted` = col_double(),
+    `Date Planted` = col_date(format = "%d/%m/%Y"),
+    `Age Description` = col_factor(),
+    `Useful Life Expectency` = col_factor(),
+    `Useful Life Expectency Value` = col_double(),
+    Precinct = col_character(),
+    `Located in` = col_character(),
+    UploadDate = col_date(format = "%d/%m/%Y"),
+    CoordinateLocation = col_character(),
+    Latitude = col_double(),
+    Longitude = col_double(),
+    `Location 1 (address)` = col_character(),
+    `Location 1 (city)` = col_character(),
+    `Location 1 (state)` = col_character(),
+    `Location 1 (zip)` = col_character(),
+    Easting = col_double(),
+    Northing = col_double()
+  )
+) %>%
+  janitor::clean_names()
+
+city_melb_trees_sf <- st_as_sf(city_melb_trees,
+  coords = c("longitude", "latitude"),
+  crs = 4326
+) %>%
+  mutate(common_name_lumped = fct_lump(common_name, 20))
+
+city_melb_trees_h3 <- city_melb_trees_sf %>%
+  mutate(h3_10 = point_to_h3(., res = 10)) %>%
+  st_drop_geometry() %>%
+  group_by(h3_10) %>%
+  summarise(
+    count = n(),
+    median_expectancy = median(useful_life_expectency_value, na.rm = TRUE),
+    median_age = median(2019 - year_planted, na.rm = TRUE),
+    median_diameter = median(diameter_breast_height, na.rm = TRUE)
+  ) %>%
+  mutate(geometry = h3_to_polygon(.)) %>%
+  st_sf()
+
+melb <- list(lon = 144.963843, lat = -37.813560)
+melb_tiles <- victor::spoils(melb$lon,
+  melb$lat,
+  zoom = 14,
+  nrow = 4,
+  ncol = 4
+)
+```
+
+```{r viz}
+
+ggplot() +
+  geom_sf(
+    data = melb_tiles$water,
+    fill = "lightblue",
+    colour = NA
+  ) +
+  geom_sf(
+    data = filter(
+      melb_tiles$road,
+      class == "tertiary"
+    ),
+    alpha = 0.4,
+    colour = "grey80"
+  ) +
+  geom_sf(
+    data = filter(
+      city_melb_trees_h3,
+      median_diameter <= 80
+    ),
+    aes(fill = median_expectancy),
+    alpha = 0.9, colour = NA
+  ) +
+  annotate("text", -Inf, Inf,
+    label = toupper("Melbourne City Trees\nLife Expectancy"),
+    hjust = 0, vjust = 1,
+    colour = "white", alpha = 0.60, size = 8
+  ) +
+  geom_sf_text(
+    data =
+      filter(
+        melb_tiles$place_label,
+        type == "suburb",
+        !name %in% c(
+          "Brunswick", "Brunswick West",
+          "Moonee Ponds"
+        )
+      ) %>%
+        group_by(name) %>%
+        summarise(),
+    aes(label = name),
+    colour = "chartreuse4",
+    alpha = 1
+  ) +
+  ggthemes::scale_fill_continuous_tableau("Blue-Green Sequential") +
+  labs(
+    fill = "Median life\nexpectancy (yrs)",
+    caption = "© Mapbox © OpenStreetMap"
+  ) +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "#3B454A"),
+    plot.margin = margin(0, 2, 0, 2),
+    legend.position = "bottom", # c(0.01, 0.02),
+    legend.background = element_rect(fill = "#3B454A"),
+    legend.margin = margin(0, 15, 0, 15),
+    legend.direction = "horizontal",
+    legend.justification = c(0, 0),
+    legend.title.align = 0,
+    plot.caption = element_text(colour = "black"),
+    legend.title = element_text(colour = "white"),
+    legend.text = element_text(colour = "white")
+  )
+
+ggsave(here("04_hexagons.png"), width = 10, height = 10)
+```
+
+

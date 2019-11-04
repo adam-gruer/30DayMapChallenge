@@ -17,3 +17,7 @@ https://twitter.com/tjukanov/status/1187713840550744066?s=20
 ## Day 3 - Polygons
 
 ![](03_polygons_buildings.png)
+
+## Day 4 - Hexagons
+
+![](04_hexagons.png)
